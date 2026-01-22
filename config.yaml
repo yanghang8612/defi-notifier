@@ -1,0 +1,28 @@
+slack:
+  webhook: ...slack webhook url...
+
+he:
+  eth: 0xD00e0079B8CAB524F3fa20EA879a7736E512a5Fc
+  tron: TKVnVyJiTzyCDgTkZRYc5LM4q8B7xXEbh5
+
+track_list:
+  - chain: eth
+    endpoint: https://mainnet.infura.io/v3/yourApiToken
+    contracts:
+      - 0xdAC17F958D2ee523a2206206994597C13D831ec7 # USDT
+      - 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48 # USDC
+      - 0xC6CDE7C39eB2f0F0095F41570af89eFC2C1Ea828 # USDT Multisig
+  - chain: tron
+    endpoint: https://api.trongrid.io/jsonrpc
+    contracts:
+      - TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t # USDT
+      - TEkxiTehnzSmSe2XqrBj4w32RUN966rdz8 # USDC
+      - TBPxhVAsuzoFnKyXtc1o2UySEydPHgATto # USDT Multisig
+  - chain: base
+    endpoint: https://base-mainnet.infura.io/v3/yourApiToken
+    contracts:
+      - 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913 # USDC
+  - chain: plasma
+    endpoint: https://rpc.plasma.to
+    contracts:
+      - 0xB8CE59FC3717ada4C02eaDF9682A9e934F625ebb # USD0

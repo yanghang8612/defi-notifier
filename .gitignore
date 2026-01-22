@@ -1,0 +1,43 @@
+# Go build artifacts
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# Go workspace
+/bin/
+/pkg/
+
+# Go coverage
+*.coverprofile
+coverage.out
+
+# Go vendor (uncomment if you use vendoring)
+# /vendor/
+
+# Go build cache (for older Go versions)
+/.cache/
+
+# IDE/editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+
+# Env files
+.env
