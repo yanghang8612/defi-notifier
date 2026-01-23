@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math/big"
 	"strings"
+	"sync"
 
 	"defi-notifier/net"
 
@@ -40,7 +41,9 @@ type Tracker struct {
 	chain  string
 	client *ethclient.Client
 
+	latestBlockNum  uint64
 	trackedBlockNum uint64
+	writeLock       sync.Mutex
 
 	concernedAddresses []common.Address
 	concernedTopics    [][]common.Hash
@@ -64,7 +67,7 @@ func NewTracker(chain, endpoint string, addresses []common.Address, HE common.Ad
 
 		client: client,
 
-		trackedBlockNum: latestBlockNum,
+		latestBlockNum: latestBlockNum,
 
 		concernedAddresses: addresses,
 		concernedTopics: [][]common.Hash{
@@ -92,10 +95,8 @@ func (t *Tracker) GetFilterLogs() {
 	}
 
 	ethQ := ethereum.FilterQuery{
-		// FromBlock: big.NewInt(int64(t.trackedBlockNum)),
-		// ToBlock:   big.NewInt(int64(latestBlockNum)),
-		FromBlock: big.NewInt(24278469),
-		ToBlock:   big.NewInt(24278469),
+		FromBlock: big.NewInt(int64(t.latestBlockNum)),
+		ToBlock:   big.NewInt(int64(latestBlockNum)),
 		Addresses: t.concernedAddresses,
 		Topics:    t.concernedTopics,
 	}
@@ -111,25 +112,31 @@ func (t *Tracker) GetFilterLogs() {
 			usr := common.BytesToAddress(vLog.Data).Hex()
 			zap.S().Infof("Detected AddedBlackList event on [%s] for address: %s, tx_hash: %s", t.chain, usr, vLog.TxHash.Hex())
 
+			slackMsg := fmt.Sprintf("Found `%s` - :usdtlogo: blacklisted address: `%s`, %s", t.chain, usr, formatTxUrl(t.chain, vLog.TxHash.Hex()))
 			if usr == t.HE.Hex() {
-				slackMsg := fmt.Sprintf("Found `%s` - :usdtlogo: blacklisted address: `%s`, %s", t.chain, usr, formatTxUrl(t.chain, vLog.TxHash.Hex()))
-				net.ReportNotificationToSlack(slackMsg, true)
+				net.ReportToMainChannel(slackMsg, true)
+			} else {
+				net.ReportToBackupChannel(slackMsg, false)
 			}
 		} else if vLog.Topics[0] == BlacklistedTopic {
 			usr := common.HexToAddress(vLog.Topics[1].Hex()).Hex()
 			zap.S().Infof("Detected Blacklisted event on [%s] for address: %s, tx_hash: %s", t.chain, usr, vLog.TxHash.Hex())
 
+			slackMsg := fmt.Sprintf("Found `%s` - :usdclogo: blacklisted address: `%s`, %s", t.chain, usr, formatTxUrl(t.chain, vLog.TxHash.Hex()))
 			if usr == t.HE.Hex() {
-				slackMsg := fmt.Sprintf("Found `%s` - :usdclogo: blacklisted address: `%s`, %s", t.chain, usr, formatTxUrl(t.chain, vLog.TxHash.Hex()))
-				net.ReportNotificationToSlack(slackMsg, true)
+				net.ReportToMainChannel(slackMsg, true)
+			} else {
+				net.ReportToBackupChannel(slackMsg, false)
 			}
 		} else if vLog.Topics[0] == BlockPlacedTopic {
 			usr := common.HexToAddress(vLog.Topics[1].Hex()).Hex()
 			zap.S().Infof("Detected BlockPlaced event on [%s] for address: %s, tx_hash: %s", t.chain, usr, vLog.TxHash.Hex())
 
+			slackMsg := fmt.Sprintf("Found `%s` - :usdclogo: blacklisted address: `%s`, %s", t.chain, usr, formatTxUrl(t.chain, vLog.TxHash.Hex()))
 			if usr == t.HE.Hex() {
-				slackMsg := fmt.Sprintf("Found `%s` - :usdclogo: blacklisted address: `%s`, %s", t.chain, usr, formatTxUrl(t.chain, vLog.TxHash.Hex()))
-				net.ReportNotificationToSlack(slackMsg, true)
+				net.ReportToMainChannel(slackMsg, true)
+			} else {
+				net.ReportToBackupChannel(slackMsg, false)
 			}
 		} else {
 			txID := new(big.Int).SetBytes(vLog.Topics[1].Bytes()).Uint64()
@@ -160,12 +167,18 @@ func (t *Tracker) GetFilterLogs() {
 				common.BytesToAddress(destination).Hex(), hexutil.Encode(data), action)
 
 			if strings.Contains(txData, strings.ToLower(t.HE.Hex())[2:]) {
-				net.ReportNotificationToSlack(slackMsg, true)
+				net.ReportToMainChannel(slackMsg, true)
+			} else {
+				net.ReportToBackupChannel(slackMsg, false)
 			}
 		}
 	}
 
-	t.trackedBlockNum = latestBlockNum + 1
+	t.writeLock.Lock()
+	defer t.writeLock.Unlock()
+
+	t.trackedBlockNum = latestBlockNum - t.latestBlockNum
+	t.latestBlockNum = latestBlockNum + 1
 
 	zap.S().Infof("Success fetch [%s] logs from block %d to %d, found %d logs",
 		t.chain, ethQ.FromBlock.Uint64(), ethQ.ToBlock.Uint64(), len(logs))
@@ -179,8 +192,18 @@ func (t *Tracker) GetChain() string {
 	return t.chain
 }
 
+func (t *Tracker) GetLatestBlockNum() uint64 {
+	return t.latestBlockNum
+}
+
 func (t *Tracker) GetTrackedBlockNum() uint64 {
-	return t.trackedBlockNum
+	t.writeLock.Lock()
+	defer t.writeLock.Unlock()
+
+	trackedBlockNum := t.trackedBlockNum
+	t.trackedBlockNum = 0
+
+	return trackedBlockNum
 }
 
 func formatTxUrl(chain, txHash string) string {

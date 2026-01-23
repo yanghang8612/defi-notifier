@@ -20,12 +20,26 @@ var (
 		SetRetryMaxWaitTime(5 * time.Second)
 )
 
-func ReportNotificationToSlack(msg string, isWarning bool) bool {
+func ReportToMainChannel(msg string, isWarning bool) bool {
+	return reportToChannel(config.C.Slack.MainWebhook, msg, isWarning)
+}
+
+func ReportToBackupChannel(msg string, isWarning bool) bool {
+	return reportToChannel(config.C.Slack.BackupWebhook, msg, isWarning)
+}
+
+func reportToChannel(webhook, msg string, isWarning bool) bool {
+	var (
+		resp *resty.Response
+		err  error
+	)
+
 	if isWarning {
-		msg += "\nPlease check this! <!channel>"
+		resp, err = client.R().SetBody(&slackMessage{Text: msg + "\nPlease check this! <!channel>"}).Post(webhook)
+	} else {
+		resp, err = client.R().SetBody(&slackMessage{Text: msg}).Post(webhook)
 	}
 
-	resp, err := client.R().SetBody(&slackMessage{Text: msg}).Post(config.C.Slack.Webhook)
 	if err != nil {
 		zap.S().Warnf("Failed to send message to Slack Channel: %s", err)
 		return false

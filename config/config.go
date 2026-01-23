@@ -4,7 +4,8 @@ import "github.com/spf13/viper"
 
 type Config struct {
 	Slack struct {
-		Webhook string `mapstructure:"webhook"`
+		MainWebhook   string `mapstructure:"main_webhook"`
+		BackupWebhook string `mapstructure:"backup_webhook"`
 	} `mapstructure:"slack"`
 
 	HE struct {

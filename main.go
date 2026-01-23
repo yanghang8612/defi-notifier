@@ -49,18 +49,31 @@ func main() {
 		}
 	})
 
+	_, _ = c.AddFunc("@every hour", func() {
+		msg := "Daily Health Check\n"
+		for _, tracker := range trackers {
+			msg += fmt.Sprintf("> `%s` - latest tracked block: %d\n, tracked block `%d`",
+				tracker.GetChain(), tracker.GetTrackedBlockNum(), tracker.GetTrackedBlockNum())
+		}
+		net.ReportToBackupChannel(msg, false)
+	})
+
 	_, _ = c.AddFunc("0 0 4 * * *", func() {
 		msg := "Daily Health Check\n"
 		for _, tracker := range trackers {
 			msg += fmt.Sprintf("> `%s` - latest tracked block: %d\n", tracker.GetChain(), tracker.GetTrackedBlockNum())
 		}
-		net.ReportNotificationToSlack(msg, false)
+		net.ReportToMainChannel(msg, false)
 	})
 
 	c.Start()
 
-	if !net.ReportNotificationToSlack("🚀 DeFi Notifier is started 🚀", false) {
-		zap.S().Fatal("Failed to send startup notification to Slack Channel")
+	if !net.ReportToMainChannel("🚀 DeFi Notifier is started 🚀", false) {
+		zap.S().Fatal("Failed to send startup notification to Main Slack Channel")
+	}
+
+	if !net.ReportToBackupChannel("🚀 DeFi Notifier is started 🚀", false) {
+		zap.S().Fatal("Failed to send startup notification to Backup Slack Channel")
 	}
 
 	watchOSSignal(trackers)
