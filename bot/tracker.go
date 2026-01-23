@@ -177,7 +177,7 @@ func (t *Tracker) GetFilterLogs() {
 	t.writeLock.Lock()
 	defer t.writeLock.Unlock()
 
-	t.trackedBlockNum = latestBlockNum - t.latestBlockNum
+	t.trackedBlockNum += latestBlockNum - t.latestBlockNum + 1
 	t.latestBlockNum = latestBlockNum + 1
 
 	zap.S().Infof("Success fetch [%s] logs from block %d to %d, found %d logs",
