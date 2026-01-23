@@ -20,6 +20,22 @@ var (
 		SetRetryMaxWaitTime(5 * time.Second)
 )
 
+func TestSlackWebhook(webhook string) bool {
+	resp, err := client.R().Post(webhook)
+	if err != nil {
+		zap.S().Warnf("Failed to send test message to Slack Channel: %s", err)
+		return false
+	}
+
+	if resp.StatusCode() != 400 || resp.String() != "invalid_payload" {
+		zap.S().Warnf("Failed to send test message to Slack Channel: status code %d, body: %s",
+			resp.StatusCode(), resp.String())
+		return false
+	}
+
+	return true
+}
+
 func ReportToMainChannel(msg string, isWarning bool) bool {
 	return reportToChannel(config.C.Slack.MainWebhook, msg, isWarning)
 }

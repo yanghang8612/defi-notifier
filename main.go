@@ -68,8 +68,8 @@ func main() {
 
 	c.Start()
 
-	if !net.ReportToMainChannel("🚀 DeFi Notifier is started 🚀", false) {
-		zap.S().Fatal("Failed to send startup notification to Main Slack Channel")
+	if !net.TestSlackWebhook(config.C.Slack.MainWebhook) {
+		zap.S().Fatal("Main Slack Webhook is invalid")
 	}
 
 	if !net.ReportToBackupChannel("🚀 DeFi Notifier is started 🚀", false) {
