@@ -49,7 +49,7 @@ func main() {
 		}
 	})
 
-	_, _ = c.AddFunc("@every hour", func() {
+	_, _ = c.AddFunc("@hourly", func() {
 		msg := "Daily Health Check\n"
 		for _, tracker := range trackers {
 			msg += fmt.Sprintf("> `%s` - latest tracked block: %d\n, tracked block `%d`",
