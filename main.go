@@ -50,10 +50,10 @@ func main() {
 	})
 
 	_, _ = c.AddFunc("@hourly", func() {
-		msg := "Daily Health Check\n"
+		msg := "Hourly Health Check\n"
 		for _, tracker := range trackers {
-			msg += fmt.Sprintf("> `%s` - latest tracked block: %d\n, tracked block `%d`",
-				tracker.GetChain(), tracker.GetTrackedBlockNum(), tracker.GetTrackedBlockNum())
+			msg += fmt.Sprintf("> `%s` - latest tracked block: %d, tracked block `%d`\n",
+				tracker.GetChain(), tracker.GetLatestBlockNum(), tracker.GetTrackedBlockNum())
 		}
 		net.ReportToBackupChannel(msg, false)
 	})
