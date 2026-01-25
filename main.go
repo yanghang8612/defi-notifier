@@ -52,7 +52,7 @@ func main() {
 	_, _ = c.AddFunc("@hourly", func() {
 		msg := "Hourly Health Check\n"
 		for _, tracker := range trackers {
-			msg += fmt.Sprintf("> `%s` - latest tracked block: %d, tracked block `%d`\n",
+			msg += fmt.Sprintf("> `%s` - latest tracked block height: %d, blocks tracked in the past hour `%d`\n",
 				tracker.GetChain(), tracker.GetLatestBlockNum(), tracker.GetTrackedBlockNum())
 		}
 		net.ReportToBackupChannel(msg, false)
@@ -61,7 +61,7 @@ func main() {
 	_, _ = c.AddFunc("0 0 4 * * *", func() {
 		msg := "Daily Health Check\n"
 		for _, tracker := range trackers {
-			msg += fmt.Sprintf("> `%s` - latest tracked block: %d\n", tracker.GetChain(), tracker.GetTrackedBlockNum())
+			msg += fmt.Sprintf("> `%s` - latest tracked block height: %d\n", tracker.GetChain(), tracker.GetLatestBlockNum())
 		}
 		net.ReportToMainChannel(msg, false)
 	})
