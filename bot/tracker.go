@@ -99,10 +99,8 @@ func (t *Tracker) GetFilterLogs() {
 	}
 
 	ethQ := ethereum.FilterQuery{
-		// FromBlock: big.NewInt(int64(t.latestBlockNum)),
-		// ToBlock:   big.NewInt(int64(latestBlockNum)),
-		FromBlock: big.NewInt(79569150),
-		ToBlock:   big.NewInt(79569150),
+		FromBlock: big.NewInt(int64(t.latestBlockNum)),
+		ToBlock:   big.NewInt(int64(latestBlockNum)),
 		Addresses: t.concernedAddresses,
 		Topics:    t.concernedTopics,
 	}
