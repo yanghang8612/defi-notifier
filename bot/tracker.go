@@ -209,7 +209,7 @@ func (t *Tracker) GetTrackedBlockNum() uint64 {
 func formatTxUrl(chain, txHash string) string {
 	switch strings.ToLower(chain) {
 	case "tron":
-		return fmt.Sprintf(":clippy:<https://tronscan.io/#/transaction/%s|TxHash>", txHash)
+		return fmt.Sprintf(":clippy:<https://tronscan.io/#/transaction/%s|TxHash>", txHash[2:])
 	case "base":
 		return fmt.Sprintf(":clippy:<https://basescan.io/tx/%s|TxHash>", txHash)
 	case "plasma":
