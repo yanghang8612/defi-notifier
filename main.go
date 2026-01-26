@@ -13,6 +13,7 @@ import (
 	"defi-notifier/net"
 	"defi-notifier/utils"
 
+	"github.com/btcsuite/btcd/btcutil/base58"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/robfig/cron/v3"
 	"go.uber.org/zap"
@@ -26,6 +27,7 @@ func main() {
 		var (
 			HE        common.Address
 			addresses []common.Address
+			converter func(common.Address) string
 
 			chain = strings.ToLower(trackerCfg.Chain)
 		)
@@ -33,11 +35,17 @@ func main() {
 		if chain == "tron" {
 			HE = utils.MustDecodeBase58(config.C.HE.Tron)
 			addresses = utils.ConvertTronAddresses(trackerCfg.Contracts)
+			converter = func(addr common.Address) string {
+				return base58.CheckEncode(addr.Bytes(), 0x41)
+			}
 		} else {
 			HE = common.HexToAddress(config.C.HE.Eth)
 			addresses = utils.ConvertEthAddresses(trackerCfg.Contracts)
+			converter = func(addr common.Address) string {
+				return addr.Hex()
+			}
 		}
-		tracker := bot.NewTracker(chain, trackerCfg.Endpoint, addresses, HE)
+		tracker := bot.NewTracker(chain, trackerCfg.Endpoint, addresses, HE, converter)
 		trackers = append(trackers, tracker)
 	}
 

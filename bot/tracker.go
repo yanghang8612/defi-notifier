@@ -49,9 +49,11 @@ type Tracker struct {
 	concernedTopics    [][]common.Hash
 
 	HE common.Address
+
+	converter func(common.Address) string
 }
 
-func NewTracker(chain, endpoint string, addresses []common.Address, HE common.Address) *Tracker {
+func NewTracker(chain, endpoint string, addresses []common.Address, HE common.Address, converter func(common.Address) string) *Tracker {
 	client, err := ethclient.Dial(endpoint)
 	if err != nil {
 		zap.S().Fatalf("Failed to connect to [%s] client: %v", chain, err)
@@ -80,6 +82,8 @@ func NewTracker(chain, endpoint string, addresses []common.Address, HE common.Ad
 		},
 
 		HE: HE,
+
+		converter: converter,
 	}
 
 	zap.S().Infof("Initialized [%s] tracker, starting from block %d", chain, latestBlockNum)
@@ -95,8 +99,10 @@ func (t *Tracker) GetFilterLogs() {
 	}
 
 	ethQ := ethereum.FilterQuery{
-		FromBlock: big.NewInt(int64(t.latestBlockNum)),
-		ToBlock:   big.NewInt(int64(latestBlockNum)),
+		// FromBlock: big.NewInt(int64(t.latestBlockNum)),
+		// ToBlock:   big.NewInt(int64(latestBlockNum)),
+		FromBlock: big.NewInt(79569150),
+		ToBlock:   big.NewInt(79569150),
 		Addresses: t.concernedAddresses,
 		Topics:    t.concernedTopics,
 	}
@@ -109,31 +115,36 @@ func (t *Tracker) GetFilterLogs() {
 
 	for _, vLog := range logs {
 		if vLog.Topics[0] == AddedBlackListTopic {
-			usr := common.BytesToAddress(vLog.Data).Hex()
+			var usr string
+			if len(vLog.Data) > 0 {
+				usr = t.converter(common.BytesToAddress(vLog.Data))
+			} else {
+				usr = t.converter(common.HexToAddress(vLog.Topics[1].Hex()))
+			}
 			zap.S().Infof("Detected AddedBlackList event on [%s] for address: %s, tx_hash: %s", t.chain, usr, vLog.TxHash.Hex())
 
 			slackMsg := fmt.Sprintf("Found `%s` - :usdtlogo: blacklisted address: `%s`, %s", t.chain, usr, formatTxUrl(t.chain, vLog.TxHash.Hex()))
-			if usr == t.HE.Hex() {
+			if usr == t.converter(t.HE) {
 				net.ReportToMainChannel(slackMsg, true)
 			} else {
 				net.ReportToBackupChannel(slackMsg, false)
 			}
 		} else if vLog.Topics[0] == BlacklistedTopic {
-			usr := common.HexToAddress(vLog.Topics[1].Hex()).Hex()
+			usr := t.converter(common.HexToAddress(vLog.Topics[1].Hex()))
 			zap.S().Infof("Detected Blacklisted event on [%s] for address: %s, tx_hash: %s", t.chain, usr, vLog.TxHash.Hex())
 
 			slackMsg := fmt.Sprintf("Found `%s` - :usdclogo: blacklisted address: `%s`, %s", t.chain, usr, formatTxUrl(t.chain, vLog.TxHash.Hex()))
-			if usr == t.HE.Hex() {
+			if usr == t.converter(t.HE) {
 				net.ReportToMainChannel(slackMsg, true)
 			} else {
 				net.ReportToBackupChannel(slackMsg, false)
 			}
 		} else if vLog.Topics[0] == BlockPlacedTopic {
-			usr := common.HexToAddress(vLog.Topics[1].Hex()).Hex()
+			usr := t.converter(common.HexToAddress(vLog.Topics[1].Hex()))
 			zap.S().Infof("Detected BlockPlaced event on [%s] for address: %s, tx_hash: %s", t.chain, usr, vLog.TxHash.Hex())
 
 			slackMsg := fmt.Sprintf("Found `%s` - :usdclogo: blacklisted address: `%s`, %s", t.chain, usr, formatTxUrl(t.chain, vLog.TxHash.Hex()))
-			if usr == t.HE.Hex() {
+			if usr == t.converter(t.HE) {
 				net.ReportToMainChannel(slackMsg, true)
 			} else {
 				net.ReportToBackupChannel(slackMsg, false)
