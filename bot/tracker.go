@@ -12,6 +12,7 @@ import (
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"go.uber.org/zap"
@@ -38,8 +39,9 @@ var (
 )
 
 type Tracker struct {
-	chain  string
-	client *ethclient.Client
+	chain    string
+	client   *ethclient.Client
+	explorer string
 
 	latestBlockNum  uint64
 	trackedBlockNum uint64
@@ -53,7 +55,7 @@ type Tracker struct {
 	converter func(common.Address) string
 }
 
-func NewTracker(chain, endpoint string, addresses []common.Address, HE common.Address, converter func(common.Address) string) *Tracker {
+func NewTracker(chain, endpoint, explorer string, addresses []common.Address, HE common.Address, converter func(common.Address) string) *Tracker {
 	client, err := ethclient.Dial(endpoint)
 	if err != nil {
 		zap.S().Fatalf("Failed to connect to [%s] client: %v", chain, err)
@@ -65,9 +67,9 @@ func NewTracker(chain, endpoint string, addresses []common.Address, HE common.Ad
 	}
 
 	tracker := &Tracker{
-		chain: chain,
-
-		client: client,
+		chain:    chain,
+		client:   client,
+		explorer: explorer,
 
 		latestBlockNum: latestBlockNum,
 
@@ -94,103 +96,121 @@ func NewTracker(chain, endpoint string, addresses []common.Address, HE common.Ad
 func (t *Tracker) GetFilterLogs() {
 	latestBlockNum, err := t.client.BlockNumber(context.Background())
 	if err != nil {
-		zap.S().Errorf("Failed to get latest %s block number: %v", t.chain, err)
+		zap.S().Errorf("Failed to get latest [%s] block number: %v", t.chain, err)
 		return
 	}
 
-	ethQ := ethereum.FilterQuery{
-		FromBlock: big.NewInt(int64(t.latestBlockNum)),
-		ToBlock:   big.NewInt(int64(latestBlockNum)),
-		Addresses: t.concernedAddresses,
-		Topics:    t.concernedTopics,
-	}
+	for {
+		if t.latestBlockNum > latestBlockNum {
+			break
+		}
 
-	logs, err := t.client.FilterLogs(context.Background(), ethQ)
-	if err != nil {
-		zap.S().Errorf("Failed to filter logs: %v", err)
-		return
-	}
-
-	for _, vLog := range logs {
-		if vLog.Topics[0] == AddedBlackListTopic {
-			var usr string
-			if len(vLog.Data) > 0 {
-				usr = t.converter(common.BytesToAddress(vLog.Data))
-			} else {
-				usr = t.converter(common.HexToAddress(vLog.Topics[1].Hex()))
-			}
-			zap.S().Infof("Detected AddedBlackList event on [%s] for address: %s, tx_hash: %s", t.chain, usr, vLog.TxHash.Hex())
-
-			slackMsg := fmt.Sprintf("Found `%s` - :usdtlogo: blacklisted address: `%s`, %s", t.chain, usr, formatTxUrl(t.chain, vLog.TxHash.Hex()))
-			if usr == t.converter(t.HE) {
-				net.ReportToMainChannel(slackMsg, true)
-			} else {
-				net.ReportToBackupChannel(slackMsg, false)
-			}
-		} else if vLog.Topics[0] == BlacklistedTopic {
-			usr := t.converter(common.HexToAddress(vLog.Topics[1].Hex()))
-			zap.S().Infof("Detected Blacklisted event on [%s] for address: %s, tx_hash: %s", t.chain, usr, vLog.TxHash.Hex())
-
-			slackMsg := fmt.Sprintf("Found `%s` - :usdclogo: blacklisted address: `%s`, %s", t.chain, usr, formatTxUrl(t.chain, vLog.TxHash.Hex()))
-			if usr == t.converter(t.HE) {
-				net.ReportToMainChannel(slackMsg, true)
-			} else {
-				net.ReportToBackupChannel(slackMsg, false)
-			}
-		} else if vLog.Topics[0] == BlockPlacedTopic {
-			usr := t.converter(common.HexToAddress(vLog.Topics[1].Hex()))
-			zap.S().Infof("Detected BlockPlaced event on [%s] for address: %s, tx_hash: %s", t.chain, usr, vLog.TxHash.Hex())
-
-			slackMsg := fmt.Sprintf("Found `%s` - :usdclogo: blacklisted address: `%s`, %s", t.chain, usr, formatTxUrl(t.chain, vLog.TxHash.Hex()))
-			if usr == t.converter(t.HE) {
-				net.ReportToMainChannel(slackMsg, true)
-			} else {
-				net.ReportToBackupChannel(slackMsg, false)
-			}
+		var toBlock uint64
+		if latestBlockNum-t.latestBlockNum > 1000 {
+			toBlock = t.latestBlockNum + 1000
 		} else {
-			txID := new(big.Int).SetBytes(vLog.Topics[1].Bytes()).Uint64()
-			zap.S().Infof("Detected Submission event on [%s] for tx_id: %d, tx_hash: %s", t.chain, txID, vLog.TxHash.Hex())
+			toBlock = latestBlockNum
+		}
+		ethQ := ethereum.FilterQuery{
+			FromBlock: big.NewInt(int64(t.latestBlockNum)),
+			ToBlock:   big.NewInt(int64(toBlock)),
+			Addresses: t.concernedAddresses,
+			Topics:    t.concernedTopics,
+		}
 
-			tx, _, rpcErr := t.client.TransactionByHash(context.Background(), vLog.TxHash)
-			if rpcErr != nil {
-				zap.S().Errorf("Failed to get transaction by hash %s: %v", vLog.TxHash.Hex(), err)
-				continue
-			}
-			destination := tx.Data()[4 : 4+32]
-			data := tx.Data()[4+32*4:]
+		logs, rpcErr := t.client.FilterLogs(context.Background(), ethQ)
+		if rpcErr != nil {
+			zap.S().Errorf("Failed to filter logs on [%s]: %v", t.chain, rpcErr)
+			return
+		}
 
-			txData := hexutil.Encode(data)
-			action := "unknown"
-			if len(txData) >= 10 {
-				if act, ok := actionsMap[txData[:10]]; ok {
-					action = act
-				}
-			}
+		for _, vLog := range logs {
+			t.handleLog(vLog)
+		}
 
-			slackMsg := fmt.Sprintf("Found `%s` - :usdtlogo: multi-sig submission: %s\n"+
-				"> TxId: `%d`\n"+
-				"> Destination: %s\n"+
-				"> Data: %s\n"+
-				"> Action: `%s`\n",
-				t.chain, formatTxUrl(t.chain, vLog.TxHash.Hex()), txID,
-				common.BytesToAddress(destination).Hex(), hexutil.Encode(data), action)
+		t.writeLock.Lock()
 
-			if strings.Contains(txData, strings.ToLower(t.HE.Hex())[2:]) {
-				net.ReportToMainChannel(slackMsg, true)
-			} else {
-				net.ReportToBackupChannel(slackMsg, false)
+		t.trackedBlockNum += toBlock - t.latestBlockNum + 1
+		t.latestBlockNum = toBlock + 1
+
+		t.writeLock.Unlock()
+
+		zap.S().Infof("Success fetch [%s] logs from block %d to %d, found %d logs",
+			t.chain, ethQ.FromBlock.Uint64(), ethQ.ToBlock.Uint64(), len(logs))
+	}
+}
+
+func (t *Tracker) handleLog(log types.Log) {
+	switch log.Topics[0] {
+	case AddedBlackListTopic:
+		var usr string
+		if len(log.Data) > 0 {
+			usr = t.converter(common.BytesToAddress(log.Data))
+		} else {
+			usr = t.converter(common.HexToAddress(log.Topics[1].Hex()))
+		}
+		zap.S().Infof("Detected AddedBlackList event on [%s] for address: %s, tx_hash: %s", t.chain, usr, log.TxHash.Hex())
+
+		slackMsg := fmt.Sprintf("Found `%s` - :usdtlogo: blacklisted address: `%s`, %s", t.chain, usr, formatTxUrl(t.explorer, log.TxHash.Hex()))
+		if usr == t.converter(t.HE) {
+			net.ReportToMainChannel(slackMsg, true)
+		} else {
+			net.ReportToBackupChannel(slackMsg, false)
+		}
+	case BlacklistedTopic:
+		usr := t.converter(common.HexToAddress(log.Topics[1].Hex()))
+		zap.S().Infof("Detected Blacklisted event on [%s] for address: %s, tx_hash: %s", t.chain, usr, log.TxHash.Hex())
+
+		slackMsg := fmt.Sprintf("Found `%s` - :usdclogo: blacklisted address: `%s`, %s", t.chain, usr, formatTxUrl(t.explorer, log.TxHash.Hex()))
+		if usr == t.converter(t.HE) {
+			net.ReportToMainChannel(slackMsg, true)
+		} else {
+			net.ReportToBackupChannel(slackMsg, false)
+		}
+	case BlockPlacedTopic:
+		usr := t.converter(common.HexToAddress(log.Topics[1].Hex()))
+		zap.S().Infof("Detected BlockPlaced event on [%s] for address: %s, tx_hash: %s", t.chain, usr, log.TxHash.Hex())
+
+		slackMsg := fmt.Sprintf("Found `%s` - :usdclogo: blacklisted address: `%s`, %s", t.chain, usr, formatTxUrl(t.explorer, log.TxHash.Hex()))
+		if usr == t.converter(t.HE) {
+			net.ReportToMainChannel(slackMsg, true)
+		} else {
+			net.ReportToBackupChannel(slackMsg, false)
+		}
+	default:
+		txID := new(big.Int).SetBytes(log.Topics[1].Bytes()).Uint64()
+		zap.S().Infof("Detected Submission event on [%s] for tx_id: %d, tx_hash: %s", t.chain, txID, log.TxHash.Hex())
+
+		tx, _, rpcErr := t.client.TransactionByHash(context.Background(), log.TxHash)
+		if rpcErr != nil {
+			zap.S().Errorf("Failed to get transaction on [%s] by hash %s: %v", t.chain, log.TxHash.Hex(), rpcErr)
+			return
+		}
+		destination := tx.Data()[4 : 4+32]
+		data := tx.Data()[4+32*4:]
+
+		txData := hexutil.Encode(data)
+		action := "unknown"
+		if len(txData) >= 10 {
+			if act, ok := actionsMap[txData[:10]]; ok {
+				action = act
 			}
 		}
+
+		slackMsg := fmt.Sprintf("Found `%s` - :usdtlogo: multi-sig submission: %s\n"+
+			"> TxId: `%d`\n"+
+			"> Destination: %s\n"+
+			"> Data: %s\n"+
+			"> Action: `%s`\n",
+			t.chain, formatTxUrl(t.explorer, log.TxHash.Hex()), txID,
+			common.BytesToAddress(destination).Hex(), hexutil.Encode(data), action)
+
+		if strings.Contains(txData, strings.ToLower(t.HE.Hex())[2:]) {
+			net.ReportToMainChannel(slackMsg, true)
+		} else {
+			net.ReportToBackupChannel(slackMsg, false)
+		}
 	}
-
-	t.writeLock.Lock()
-	defer t.writeLock.Unlock()
-
-	t.trackedBlockNum += latestBlockNum - t.latestBlockNum + 1
-	t.latestBlockNum = latestBlockNum + 1
-
-	zap.S().Infof("Success fetch [%s] logs from block %d to %d, found %d logs",
-		t.chain, ethQ.FromBlock.Uint64(), ethQ.ToBlock.Uint64(), len(logs))
 }
 
 func (t *Tracker) Stop() {
@@ -215,15 +235,12 @@ func (t *Tracker) GetTrackedBlockNum() uint64 {
 	return trackedBlockNum
 }
 
-func formatTxUrl(chain, txHash string) string {
-	switch strings.ToLower(chain) {
-	case "tron":
-		return fmt.Sprintf(":clippy:<https://tronscan.io/#/transaction/%s|TxHash>", txHash[2:])
-	case "base":
-		return fmt.Sprintf(":clippy:<https://basescan.io/tx/%s|TxHash>", txHash)
-	case "plasma":
-		return fmt.Sprintf(":clippy:<https://plasmascan.io/tx/%s|TxHash>", txHash)
-	default:
-		return fmt.Sprintf(":clippy:<https://etherscan.io/tx/%s|TxHash>", txHash)
+func formatTxUrl(explorer, txHash string) string {
+	if strings.HasSuffix(explorer, "/") {
+		explorer = explorer[:len(explorer)-1]
 	}
+	if strings.Contains(explorer, "tron") {
+		txHash = strings.TrimPrefix(txHash, "0x")
+	}
+	return fmt.Sprintf(":clippy:<%s/%s|TxHash>", explorer, txHash)
 }

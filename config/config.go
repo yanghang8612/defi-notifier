@@ -16,6 +16,7 @@ type Config struct {
 	WatchList []struct {
 		Chain     string   `mapstructure:"chain"`
 		Endpoint  string   `mapstructure:"endpoint"`
+		Explorer  string   `mapstructure:"explorer"`
 		Contracts []string `mapstructure:"contracts"`
 	} `mapstructure:"track_list"`
 }

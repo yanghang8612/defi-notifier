@@ -45,7 +45,7 @@ func main() {
 				return addr.Hex()
 			}
 		}
-		tracker := bot.NewTracker(chain, trackerCfg.Endpoint, addresses, HE, converter)
+		tracker := bot.NewTracker(chain, trackerCfg.Endpoint, trackerCfg.Explorer, addresses, HE, converter)
 		trackers = append(trackers, tracker)
 	}
 
@@ -53,7 +53,7 @@ func main() {
 
 	_, _ = c.AddFunc("@every 1m", func() {
 		for _, tracker := range trackers {
-			go tracker.GetFilterLogs()
+			tracker.GetFilterLogs()
 		}
 	})
 
